@@ -146,6 +146,20 @@ if(VAMP_BUILD_CPP_DEMO)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(vamp_rrtc_example PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
   endif()
+
+  add_executable(vamp_sdf_example scripts/cpp/sdf_example.cc)
+  target_link_libraries(vamp_sdf_example PRIVATE vamp_cpp)
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(vamp_sdf_example PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
+  endif()
+
+  add_executable(vamp_sdf_panda_example scripts/cpp/sdf_panda_example.cc)
+  target_link_libraries(vamp_sdf_panda_example PRIVATE vamp_cpp)
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(vamp_sdf_panda_example PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
+  endif()
 endif()
 
 # OMPL integration demo

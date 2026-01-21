@@ -150,6 +150,53 @@ namespace vamp
     }
 
     template <typename DataT, typename ArgT1, typename ArgT2, typename ArgT3, typename ArgT4>
+    inline auto sphere_environment_sdf(
+        const collision::Environment<DataT> &e,
+        ArgT1 sx_,
+        ArgT2 sy_,
+        ArgT3 sz_,
+        ArgT4 sr_) noexcept -> DataT
+    {
+        auto sx = static_cast<DataT>(sx_);
+        auto sy = static_cast<DataT>(sy_);
+        auto sz = static_cast<DataT>(sz_);
+        auto sr = static_cast<DataT>(sr_);
+
+        auto min_dist = static_cast<DataT>(1.0e30);
+
+        auto update_min = [&](const DataT &d) {
+             min_dist = -((-min_dist).max(-d));
+        };
+
+        for (const auto &es : e.spheres)
+        {
+            update_min(collision::sphere_sphere_l2(es, sx, sy, sz, sr));
+        }
+
+        for (const auto &ec : e.capsules)
+        {
+            update_min(collision::sphere_capsule_l2(ec, sx, sy, sz, sr));
+        }
+
+        for (const auto &ec : e.z_aligned_capsules)
+        {
+            update_min(collision::sphere_z_aligned_capsule_l2(ec, sx, sy, sz, sr));
+        }
+
+        for (const auto &ec : e.cuboids)
+        {
+            update_min(collision::sphere_cuboid_l2(ec, sx, sy, sz, sr));
+        }
+
+        for (const auto &ec : e.z_aligned_cuboids)
+        {
+            update_min(collision::sphere_z_aligned_cuboid_l2(ec, sx, sy, sz, sr));
+        }
+
+        return min_dist;
+    }
+
+    template <typename DataT, typename ArgT1, typename ArgT2, typename ArgT3, typename ArgT4>
     inline auto sphere_environment_get_collisions(
         const collision::Environment<DataT> &e,  //
         ArgT1 sx_,
