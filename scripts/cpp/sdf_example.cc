@@ -125,5 +125,61 @@ auto main(int, char **) -> int
         (void)val;
     });
 
+    std::cout << "\n--------------------------------------------------" << std::endl;
+    std::cout << "Convergence Analysis:" << std::endl;
+    std::cout << "--------------------------------------------------" << std::endl;
+
+    auto analyze_convergence = [&](std::string label, int steps) {
+        int valid_lanes = 0;
+        int total_lanes = 0;
+        double total_sdf = 0.0;
+        double min_sdf = 1e9;
+        double max_sdf = -1e9;
+
+        for(int idx = 0; idx < N_SAMPLES; ++idx) {
+            Robot::ConfigurationBlock<rake> block;
+            
+            if (steps == -1) { // Raw samples (no noise, no solver)
+                 auto& cfg = configs[idx];
+                 for (size_t d = 0; d < Robot::dimension; ++d) {
+                     std::array<float, rake> row;
+                     row.fill(cfg.element(d));
+                     block[d] = Robot::ConfigurationBlock<rake>::RowT(row.data(), false);
+                 }
+            } else {
+                block = vamp::optimization::project_to_valid<Robot, rake>(
+                    configs[idx], 
+                    env_v, 
+                    steps, 
+                    0.5f, 
+                    0.05f 
+                );
+            }
+
+            auto dists = Robot::sdf(env_v, block);
+            auto dists_arr = dists.to_array();
+
+            for(float d : dists_arr) {
+                if(d > 0) valid_lanes++;
+                total_lanes++;
+                total_sdf += d;
+                if(d < min_sdf) min_sdf = d;
+                if(d > max_sdf) max_sdf = d;
+            }
+        }
+
+        double valid_rate = 100.0 * valid_lanes / total_lanes;
+        double avg_sdf = total_sdf / total_lanes;
+        
+        std::cout << std::left << std::setw(20) << label 
+                  << " | Valid Rate: " << std::fixed << std::setprecision(1) << valid_rate << "%"
+                  << " | Avg SDF: " << std::setprecision(4) << avg_sdf 
+                  << " | Range: [" << min_sdf << ", " << max_sdf << "]" << std::endl;
+    };
+
+    analyze_convergence("Initial (Raw)", -1);
+    analyze_convergence("Solver (10 steps)", 10);
+    analyze_convergence("Solver (100 steps)", 100);
+
     return 0;
 }
