@@ -464,8 +464,11 @@ namespace vamp::robots
         template <std::size_t rake>
         inline static auto sdf(
             const vamp::collision::Environment<FloatVector<rake>> &environment,
-            const Spheres<rake> &spheres) noexcept -> FloatVector<rake>
+            const ConfigurationBlock<rake> &x) noexcept -> FloatVector<rake>
         {
+            Spheres<rake> spheres;
+            sphere_fk(x, spheres);
+
             auto min_dist = FloatVector<rake>::fill(1.0e30f);
 
             for (std::size_t i = 0; i < n_spheres; ++i)

@@ -107,6 +107,14 @@ namespace vamp::robots
             return not sphere_environment_in_collision(environment, q[0], q[1], q[2], radius);
         }
 
+        template <std::size_t rake>
+        static auto sdf(
+            const vamp::collision::Environment<FloatVector<rake>> &environment,
+            const ConfigurationBlock<rake> &q) noexcept
+        {
+            return sphere_environment_sdf(environment, q[0], q[1], q[2], radius);
+        }
+
         using Debug = std::
             pair<std::vector<std::vector<std::string>>, std::vector<std::pair<std::size_t, std::size_t>>>;
 

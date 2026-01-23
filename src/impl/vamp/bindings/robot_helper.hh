@@ -304,6 +304,12 @@ namespace vamp::binding
             return Robot::eefk(Input::array(start)).matrix();
         }
 
+        inline static auto sdf(const Type &c_in, const EnvironmentInput &environment) -> float
+        {
+            return Robot::template sdf<rake>(EnvironmentVector(environment), Input::template block<rake>(c_in))
+                .to_array()[0];
+        }
+
         inline static auto filter_self_from_pointcloud(
             const std::vector<collision::Point> &pc,
             float point_radius,
@@ -602,6 +608,12 @@ namespace vamp::binding
            "configuration_out"_a,
            "environment"_a = vamp::collision::Environment<float>(),
            "check_bounds"_a = false);
+
+        MF("sdf",
+           sdf,
+           "Compute the signed distance field (SDF) for a configuration.",
+           "configuration"_a,
+           "environment"_a = vamp::collision::Environment<float>());
 
         MF("filter_self_from_pointcloud",
            filter_self_from_pointcloud,
