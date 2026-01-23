@@ -23,6 +23,7 @@
 #include <vamp/planning/rrtc.hh>
 #include <vamp/planning/aorrtc.hh>
 #include <vamp/vector.hh>
+#include <vamp/optimization/sdf.hh>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/make_iterator.h>
@@ -348,6 +349,37 @@ namespace vamp::binding
             }
 
             return filtered;
+            return filtered;
+        }
+
+        inline static auto project_to_valid(
+            const Type &c_in,
+            const EnvironmentInput &environment,
+            int steps = 10,
+            float learning_rate = 0.5f,
+            float noise_scale = 0.1f) -> std::vector<Type>
+        {
+            auto result_block = vamp::optimization::project_to_valid<Robot, rake>(
+                Input::to(c_in),
+                EnvironmentVector(environment),
+                steps,
+                learning_rate,
+                noise_scale);
+
+            std::vector<Type> result;
+            result.reserve(rake);
+
+            for (auto i = 0U; i < rake; ++i)
+            {
+                typename Robot::Configuration cfg;
+                for (auto d = 0U; d < Robot::dimension; ++d)
+                {
+                    cfg[d] = result_block[d].element(i);
+                }
+                result.emplace_back(Input::from(cfg));
+            }
+
+            return result;
         }
     };
 
@@ -622,6 +654,15 @@ namespace vamp::binding
            "point_radius"_a,
            "configuration"_a,
            "environment"_a = vamp::collision::Environment<float>());
+
+        MF("project_to_valid",
+           project_to_valid,
+           "Projects a configuration to multiple valid candidates using SDF gradient descent.",
+           "configuration"_a,
+           "environment"_a,
+           "steps"_a = 100,
+           "learning_rate"_a = 0.5f,
+           "noise_scale"_a = 0.1f);
 
         MF("roadmap",
            PRM::roadmap,
