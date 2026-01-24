@@ -96,9 +96,10 @@ def main(robot_name: str = "panda", n_samples: int = 10000):
              # project_to_valid returns a list of valid configurations (or candidates)
              # C++ signature: returns std::vector<Type>
              candidates = robot.project_to_valid(q_init, env, steps=steps, learning_rate=0.5, noise_scale=0.1)
-             
-             if len(candidates) > 0:
-                 valid_count += 1
+             for q_cand in candidates:
+                 if robot.sdf(q_cand, env) >= 0:
+                     valid_count += 1
+                     break
                  
         end_t = time.time()
         elapsed = end_t - start_t

@@ -356,7 +356,7 @@ namespace vamp::binding
             const Type &c_in,
             const EnvironmentInput &environment,
             int steps = 10,
-            float learning_rate = 0.5f,
+            float learning_rate = 0.05f,
             float noise_scale = 0.1f) -> std::vector<Type>
         {
             auto result_block = vamp::optimization::project_to_valid<Robot, rake>(
@@ -661,7 +661,7 @@ namespace vamp::binding
            "configuration"_a,
            "environment"_a,
            "steps"_a = 100,
-           "learning_rate"_a = 0.5f,
+           "learning_rate"_a = 0.05f,
            "noise_scale"_a = 0.1f);
 
         MF("roadmap",

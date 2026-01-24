@@ -51,7 +51,7 @@ namespace vamp::optimization
         const typename Robot::Configuration &start_state,
         const collision::Environment<FloatVector<rake>> &environment,
         int steps = 100,
-        float learning_rate = 0.5f,
+        float learning_rate = 0.05f,
         float noise_scale = 0.1f) noexcept -> typename Robot::template ConfigurationBlock<rake>
     {
         using ConfigBlock = typename Robot::template ConfigurationBlock<rake>;
@@ -76,26 +76,18 @@ namespace vamp::optimization
             current_state[i] = Vector(noise_vals.data(), false);
         }
 
-        auto zero = Vector::fill(0.0f);
         auto lr = Vector::fill(learning_rate);
 
         for (int step = 0; step < steps; ++step)
         {
-            // Calculate SDF
-            auto dist = Robot::sdf(environment, current_state);
-
             // Calculate Gradient
             auto grad = compute_gradient<Robot, rake>(environment, current_state);
 
-            // Update Rule
-            auto neg_dist = -dist;
-            auto relu_neg_dist = neg_dist.max(zero); 
-            auto magnitude = lr * relu_neg_dist;
-
-            // Apply update per dimension
+            // Update Rule: Gradient Ascent
+            // q_new = q + lr * grad
             for (std::size_t i = 0; i < Robot::dimension; ++i)
             {
-                auto delta = grad[i] * magnitude;
+                auto delta = grad[i] * lr;
                 current_state[i] = current_state[i] + delta;
             }
         }
