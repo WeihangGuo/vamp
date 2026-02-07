@@ -150,6 +150,63 @@ namespace vamp
     }
 
     template <typename DataT, typename ArgT1, typename ArgT2, typename ArgT3, typename ArgT4>
+    inline constexpr auto sphere_environment_signed_distance(
+        const collision::Environment<DataT> &e,  //
+        ArgT1 sx_,
+        ArgT2 sy_,
+        ArgT3 sz_,
+        ArgT4 sr_) noexcept -> DataT
+    {
+        // TODO: Figure out a way to avoid needing to upcast floats to vectors
+        auto sx = static_cast<DataT>(sx_);
+        auto sy = static_cast<DataT>(sy_);
+        auto sz = static_cast<DataT>(sz_);
+        auto sr = static_cast<DataT>(sr_);
+        
+        auto min_dist = DataT(1000.0f); // Large value
+
+        for (const auto &es : e.spheres)
+        {
+            auto dist = collision::sphere_sphere_l2(es, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        for (const auto &ec : e.capsules)
+        {
+            auto dist = collision::sphere_capsule_l2(ec, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        for (const auto &ec : e.z_aligned_capsules)
+        {
+            auto dist = collision::sphere_z_aligned_capsule_l2(ec, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        for (const auto &ec : e.cuboids)
+        {
+            auto dist = collision::sphere_cuboid_l2(ec, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        for (const auto &ec : e.z_aligned_cuboids)
+        {
+            auto dist = collision::sphere_z_aligned_cuboid_l2(ec, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        for (const auto &eh : e.heightfields)
+        {
+            auto dist = collision::sphere_heightfield_l2(eh, sx, sy, sz, sr);
+            min_dist = min_dist.min(dist);
+        }
+
+        // Skip pointclouds for now as SDF is not supported
+
+        return min_dist;
+    }
+
+    template <typename DataT, typename ArgT1, typename ArgT2, typename ArgT3, typename ArgT4>
     inline auto sphere_environment_get_collisions(
         const collision::Environment<DataT> &e,  //
         ArgT1 sx_,
