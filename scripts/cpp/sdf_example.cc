@@ -59,7 +59,7 @@ auto main(int, char **) -> int
     int n_collisions = 0;
     int n_success = 0;
     double total_time_ms = 0.0;
-    
+    int total_iter = 0;
     std::cout << "Starting Benchmark with " << n_samples << " samples..." << std::endl;
 
     for (int i = 0; i < n_samples; ++i) {
@@ -138,6 +138,7 @@ auto main(int, char **) -> int
         if (current_min_dist >= 0) {
             n_success++;
             total_time_ms += dur.count() / 1e6;
+            total_iter += iter;
         }
     }
 
@@ -147,6 +148,7 @@ auto main(int, char **) -> int
     std::cout << "Successful Projections: " << n_success << " (" << (n_collisions > 0 ? (100.0 * n_success / n_collisions) : 0.0) << "%)" << std::endl;
     if (n_success > 0) {
         std::cout << "Average Projection Time: " << (total_time_ms / n_success) << " ms" << std::endl;
+        std::cout << "Average Iterations: " << (total_iter / n_success) << std::endl;
     }
 
     return 0;
