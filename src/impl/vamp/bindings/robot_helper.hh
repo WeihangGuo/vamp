@@ -245,7 +245,7 @@ namespace vamp::binding
 
             return result;
         }
-        
+
         inline static auto debug(const Type &c_in, const EnvironmentInput &environment) ->
             typename Robot::Debug
         {
@@ -344,93 +344,120 @@ namespace vamp::binding
             return filtered;
         }
 
-        inline static auto sdf(
-            const Type &c_in,
-            const EnvironmentInput &environment) -> float
+        inline static auto sdf(const Type &c_in, const EnvironmentInput &environment) -> float
         {
-            auto configuration = Input::to(c_in);
-            std::vector<float> q_vec(configuration.begin(), configuration.end());
-            auto block = Robot::template ConfigurationBlock<rake>(q_vec, true);
+            auto q_new_arr = Input::array(c_in);
+            std::vector<float> q_vec(q_new_arr.begin(), q_new_arr.end());
+            typename Robot::template ConfigurationBlock<rake> block(q_vec, true);
             auto dists = Robot::sdf(EnvironmentVector(environment), block);
-            
+
             float min_dist = 1e9;
-            for(const auto& v : dists) {
+            for (const auto &v : dists)
+            {
                 auto arr = v.to_array();
-                for(auto d : arr) {
-                    if(d < min_dist) min_dist = d;
+                for (auto d : arr)
+                {
+                    if (d < min_dist)
+                    {
+                        min_dist = d;
+                    }
                 }
             }
             return min_dist;
         }
 
-        inline static auto project_to_valid(
-            const Type &c_in,
-            const EnvironmentInput &environment,
-            float alpha = 0.1f) -> Type 
+        inline static auto
+        project_to_valid(const Type &c_in, const EnvironmentInput &environment, float alpha = 0.1f) -> Type
         {
-            auto q_curr = Input::to(c_in);
+            auto q_new_arr = Input::array(c_in);
+
             auto env_v = EnvironmentVector(environment);
 
             // Initial check
-            std::vector<float> q_vec(q_curr.begin(), q_curr.end());
-            auto block = Robot::template ConfigurationBlock<rake>(q_vec, true);
+            std::vector<float> q_vec(q_new_arr.begin(), q_new_arr.end());
+            typename Robot::template ConfigurationBlock<rake> block(q_vec, true);
             auto dists = Robot::sdf(env_v, block);
-            
+
             float min_dist = 1e9;
-            for(const auto& v : dists) {
+            for (const auto &v : dists)
+            {
                 auto arr = v.to_array();
-                for(auto d : arr) {
-                    if(d < min_dist) min_dist = d;
+                for (auto d : arr)
+                {
+                    if (d < min_dist)
+                    {
+                        min_dist = d;
+                    }
                 }
             }
 
-            if (min_dist >= 0) return c_in;
+            if (min_dist >= 0)
+            {
+                return c_in;
+            }
 
-            auto q_new = q_curr;
             float current_min_dist = min_dist;
             int iter = 0;
             const int max_iters = 100;
 
-            while (current_min_dist < 0 && iter < max_iters) {
+            while (current_min_dist < 0 && iter < max_iters)
+            {
                 // Re-evaluate
-                std::vector<float> q_v(q_new.begin(), q_new.end());
-                auto b = Robot::template ConfigurationBlock<rake>(q_v, true);
+                std::vector<float> q_v(q_new_arr.begin(), q_new_arr.end());
+                typename Robot::template ConfigurationBlock<rake> b(q_v, true);
                 auto res = Robot::sdf_gradient(env_v, b);
 
                 current_min_dist = 1e9;
-                for(const auto& v : res.first) {
+                for (const auto &v : res.first)
+                {
                     auto arr = v.to_array();
-                    for(auto d : arr) {
-                        if(d < current_min_dist) current_min_dist = d;
+                    for (auto d : arr)
+                    {
+                        if (d < current_min_dist)
+                        {
+                            current_min_dist = d;
+                        }
                     }
                 }
 
-                if (current_min_dist >= 0) break;
+                if (current_min_dist >= 0)
+                {
+                    break;
+                }
 
                 // Gradient
                 std::array<float, Robot::n_spheres * 3> flat_grads;
-                for(size_t k=0; k < Robot::n_spheres * 3; ++k) {
-                    flat_grads[k] = res.second[k].to_array()[0]; 
+                for (size_t k = 0; k < Robot::n_spheres * 3; ++k)
+                {
+                    flat_grads[k] = res.second[k].to_array()[0];
                 }
 
                 std::array<float, Robot::dimension> dq;
-                Robot::d_collision_d_q(q_new, flat_grads, dq);
-                
+                Robot::d_collision_d_q(q_new_arr, flat_grads, dq);
+
                 float dq_norm = 0.0f;
-                for(float v : dq) dq_norm += v*v;
+                for (float v : dq)
+                {
+                    dq_norm += v * v;
+                }
                 dq_norm = std::sqrt(dq_norm);
 
-                if (dq_norm > 1e-6) {
-                    for(size_t k=0; k<Robot::dimension; ++k) {
-                        q_new[k] += alpha * (dq[k] / dq_norm);
+                if (dq_norm > 1e-6)
+                {
+                    for (size_t k = 0; k < Robot::dimension; ++k)
+                    {
+                        q_new_arr[k] += alpha * (dq[k] / dq_norm);
                     }
-                } else {
+                }
+                else
+                {
                     break;
                 }
                 iter++;
             }
-            
-            return Input::from(q_new);
+
+            std::vector<float> q_final(q_new_arr.begin(), q_new_arr.end());
+            return Input::from(Configuration(q_final));
         }
     };
 
@@ -708,6 +735,19 @@ namespace vamp::binding
            "environment"_a,
            "settings"_a,
            "rng"_a);
+
+        MF("sdf",
+           sdf,
+           "Computes the signed distance field.",
+           "configuration"_a,
+           "environment"_a = vamp::collision::Environment<float>());
+
+        MF("project_to_valid",
+           project_to_valid,
+           "Projects a configuration to a valid one.",
+           "configuration"_a,
+           "environment"_a = vamp::collision::Environment<float>(),
+           "alpha"_a = 0.1f);
 
 #define PLANNER(name, func, desc, ...)                                                                       \
     MF(name, func::single, desc, "start"_a, "goal"_a, "environment"_a, "settings"_a, "rng"_a);               \
