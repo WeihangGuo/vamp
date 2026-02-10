@@ -371,59 +371,50 @@ namespace vamp::binding
         {
             auto q_new_arr = Input::array(c_in);
 
+            // Compute bounds
+            // Assuming physical values in q_new_arr, based on Robot::s_m (range) and Robot::s_a (lower bound)
+            // lower = s_a
+            // upper = s_a + s_m
+            std::array<float, Robot::dimension> lower_bound;
+            std::array<float, Robot::dimension> upper_bound;
+            for (size_t k = 0; k < Robot::dimension; ++k)
+            {
+                lower_bound[k] = Robot::s_a[k];
+                upper_bound[k] = Robot::s_a[k] + Robot::s_m[k];
+            }
+
             auto env_v = EnvironmentVector(environment);
 
             // Initial check
             std::vector<float> q_vec(q_new_arr.begin(), q_new_arr.end());
             typename Robot::template ConfigurationBlock<rake> block(q_vec, true);
-            auto dists = Robot::sdf(env_v, block);
-
-            float min_dist = 1e9;
-            for (const auto &v : dists)
-            {
-                auto arr = v.to_array();
-                for (auto d : arr)
-                {
-                    if (d < min_dist)
-                    {
-                        min_dist = d;
-                    }
-                }
-            }
-
-            if (min_dist >= 0)
+            
+            // Boolean check: valid if both self-collision free AND environment collision free
+            if (Robot::template fkcc<rake>(env_v, block))
             {
                 return c_in;
             }
 
-            float current_min_dist = min_dist;
+            bool valid = Robot::template fkcc<rake>(env_v, block);
+
+            // If min_dist >= 0, it means we are environment-safe, but fkcc returned false,
+            // so we must be in self-collision. 
+            // Since we don't have self-collision gradient, we can only return what we have (and maybe clamped).
+            // But let's run the loop anyway to enforce bounds if nothing else.
+            
             int iter = 0;
             const int max_iters = 100;
-
-            while (current_min_dist < 0 && iter < max_iters)
+            while (iter < max_iters)
             {
                 // Re-evaluate
                 std::vector<float> q_v(q_new_arr.begin(), q_new_arr.end());
                 typename Robot::template ConfigurationBlock<rake> b(q_v, true);
-                auto res = Robot::sdf_gradient(env_v, b);
 
-                current_min_dist = 1e9;
-                for (const auto &v : res.first)
-                {
-                    auto arr = v.to_array();
-                    for (auto d : arr)
-                    {
-                        if (d < current_min_dist)
-                        {
-                            current_min_dist = d;
-                        }
-                    }
-                }
-
-                if (current_min_dist >= 0)
-                {
+                // Early exit if valid (self + env)
+                if (Robot::template fkcc<rake>(env_v, b))
                     break;
-                }
+
+                auto res = Robot::sdf_gradient(env_v, b);
 
                 // Gradient
                 std::array<float, Robot::n_spheres * 3> flat_grads;
@@ -447,6 +438,10 @@ namespace vamp::binding
                     for (size_t k = 0; k < Robot::dimension; ++k)
                     {
                         q_new_arr[k] += alpha * (dq[k] / dq_norm);
+                        
+                        // Clamp to bounds
+                        if (q_new_arr[k] < lower_bound[k]) q_new_arr[k] = lower_bound[k];
+                        if (q_new_arr[k] > upper_bound[k]) q_new_arr[k] = upper_bound[k];
                     }
                 }
                 else

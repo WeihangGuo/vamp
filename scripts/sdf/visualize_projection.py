@@ -109,6 +109,38 @@ def main():
         
         
     btn = server.gui.add_button("Sample & Project")
+    # Text input for manual config
+    config_input = server.gui.add_text("Config Input", initial_value="-1.280461, -0.539198, -1.745114, -3.076952, -1.076599, 1.627267, -0.418525")
+    
+    def visualize_from_input():
+        try:
+            txt = config_input.value
+            # Handle newlines and commas
+            vals = [float(x.strip()) for x in txt.replace('\n', ',').split(',') if x.strip()]
+            q_manual = np.array(vals)
+            
+            if len(q_manual) != 7:
+                print(f"Expected 7 DOFs, got {len(q_manual)}")
+                return
+
+            print(f"Visualizing manual config: {q_manual}")
+            viser_urdf_init.update_cfg(q_manual)
+            
+            # Project logic (reusing environment and helper)
+            start_t = time.time()
+            q_proj = vamp.panda.project_to_valid(q_manual, env)
+            q_proj = np.array(q_proj).transpose().flatten()[:len(lower)]
+            end_t = time.time()
+            
+            viser_urdf_proj.update_cfg(q_proj)
+            print(f"Projected config: {q_proj}")
+            print(f"Optimization took {end_t - start_t:.4f}s")
+            
+        except Exception as e:
+            print(f"Error parsing input: {e}")
+
+    btn_visual_config = server.gui.add_button("Visualize Input")
+    btn_visual_config.on_click(lambda _: visualize_from_input())
     btn.on_click(lambda _: sample_and_project())
     
     print("Ready. Connect to Viser at http://localhost:8080")
