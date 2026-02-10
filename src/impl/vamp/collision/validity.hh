@@ -250,16 +250,38 @@ namespace vamp
         // Spheres
         for (const auto &es : e.spheres)
         {
-             // sphere_sphere_l2: sum.sqrt() - (a.r + b.r)
              // Vectors: s (query) - es (obstacle)
              auto dx = s.x - es.x;
              auto dy = s.y - es.y;
              auto dz = s.z - es.z;
-             auto len = collision::sqrt(collision::dot_3(dx, dy, dz, dx, dy, dz));
-             auto dist = len - (s.r + es.r);
+             auto dist_sq = collision::dot_3(dx, dy, dz, dx, dy, dz);
+
+             // Pruning: if dist_sq >= (min_dist + s.r + es.r)^2, we can skip.
+             // We use a conservative check for all lanes.
+             // Note: min_dist decreases, so we start eagerly.
+             auto combined_r = s.r + es.r;
+             auto threshold = min_dist + combined_r;
              
-             auto inv_len = DataT(1.0f) / len;
-             update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+             // Check if we can safely skip this sphere for all lanes
+             // Skip if all: dist_sq >= threshold^2 AND threshold > 0
+             // We use blend/mask logic or just operate. 
+             // Since "all()" might be expensive or not available, we can just proceed to calculate dist
+             // but defer gradient.
+             
+             // However, strictly calculating sqrt is what we want to avoid.
+             // Let's rely on the mask after distance calc to skip gradient, 
+             // which is the main cost besides sqrt.
+             
+             auto len = collision::sqrt(dist_sq);
+             auto dist = len - combined_r;
+             
+             // Check if ANY lane improves min_dist
+             auto mask = dist < min_dist;
+             if (mask.any())
+             {
+                 auto inv_len = DataT(1.0f) / len;
+                 update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+             }
         }
 
         // Capsules
@@ -278,10 +300,21 @@ namespace vamp
             auto dy = s.y - cy;
             auto dz = s.z - cz;
             
-            auto len = collision::sqrt(collision::dot_3(dx, dy, dz, dx, dy, dz));
-            auto dist = len - (s.r + ec.r);
-            auto inv_len = DataT(1.0f) / len;
-            update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+            auto dist_sq = collision::dot_3(dx, dy, dz, dx, dy, dz);
+            
+            auto combined_r = s.r + ec.r;
+            // Pruning could happen here based on dist_sq but we already did some math. 
+            // The segment projection is cheap enough. Sqrt is the cost.
+            
+            auto len = collision::sqrt(dist_sq);
+            auto dist = len - combined_r;
+
+            auto mask = dist < min_dist;
+            if (mask.any())
+            {
+                auto inv_len = DataT(1.0f) / len;
+                update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+            }
         }
 
         // Z-Aligned Capsules
@@ -298,10 +331,18 @@ namespace vamp
             auto dy = s.y - cy;
             auto dz = s.z - cz;
 
-            auto len = collision::sqrt(collision::dot_3(dx, dy, dz, dx, dy, dz));
-            auto dist = len - (s.r + ec.r);
-            auto inv_len = DataT(1.0f) / len;
-            update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+            auto dist_sq = collision::dot_3(dx, dy, dz, dx, dy, dz);
+            auto combined_r = s.r + ec.r;
+            
+            auto len = collision::sqrt(dist_sq);
+            auto dist = len - combined_r;
+
+            auto mask = dist < min_dist;
+            if (mask.any())
+            {
+                 auto inv_len = DataT(1.0f) / len;
+                 update(dist, dx * inv_len, dy * inv_len, dz * inv_len);
+            }
         }
 
         // Cuboids
@@ -310,6 +351,22 @@ namespace vamp
             auto xs = s.x - ec.x;
             auto ys = s.y - ec.y;
             auto zs = s.z - ec.z;
+
+            // Bounding Sphere Pruning
+            // Conservative radius of cuboid = length of half-diagonal
+            auto diag_sq = ec.axis_1_r * ec.axis_1_r + ec.axis_2_r * ec.axis_2_r + ec.axis_3_r * ec.axis_3_r;
+            auto R = collision::sqrt(diag_sq);
+            auto center_dist_sq = collision::dot_3(xs, ys, zs, xs, ys, zs);
+            auto thresh = min_dist + s.r + R;
+            
+            // If strictly outside bounding sphere for all lanes, skip.
+            // Condition: center_dist > thresh. (Using squared check)
+            // Safety: thresh must be positive. min_dist usually > 0.
+            auto skip_mask = (center_dist_sq >= thresh * thresh) & (thresh > 0.0f);
+            if (skip_mask.all())
+            {
+                continue;
+            }
 
             // Project query point onto local axes
             auto p1 = collision::dot_3(ec.axis_1_x, ec.axis_1_y, ec.axis_1_z, xs, ys, zs);
@@ -323,50 +380,51 @@ namespace vamp
             auto sum = collision::dot_3(a1, a2, a3, a1, a2, a3).sqrt();
             auto dist = sum - s.r;
 
-            // Gradient in local frame (unnormalized)
-            // grad_v = sum( 2 * ai * grad(ai) )
-            // grad(ai) = sign(pi) * axis_i  if ai > 0 else 0
-            // The gradient direction of sqrt(v) is same as v.
-            // So we want vector: sum( ai * sign(pi) * axis_i )
-            
-            // Sign of projections
-            auto s1 = DataT(-1.0f).blend(DataT(1.0f), p1 >= 0.0f);
-            auto s2 = DataT(-1.0f).blend(DataT(1.0f), p2 >= 0.0f);
-            auto s3 = DataT(-1.0f).blend(DataT(1.0f), p3 >= 0.0f);
+            auto mask = dist < min_dist;
+            if (mask.any())
+            {
+                // Gradient in local frame (unnormalized)
+                // grad_v = sum( 2 * ai * grad(ai) )
+                // grad(ai) = sign(pi) * axis_i  if ai > 0 else 0
+                // The gradient direction of sqrt(v) is same as v.
+                // So we want vector: sum( ai * sign(pi) * axis_i )
+                
+                // Sign of projections
+                auto s1 = DataT(-1.0f).blend(DataT(1.0f), p1 >= 0.0f);
+                auto s2 = DataT(-1.0f).blend(DataT(1.0f), p2 >= 0.0f);
+                auto s3 = DataT(-1.0f).blend(DataT(1.0f), p3 >= 0.0f);
 
-            // Components
-            auto c1 = a1 * s1;
-            auto c2 = a2 * s2;
-            auto c3 = a3 * s3;
+                // Components. Only needed if mask is true? 
+                // We compute for vector width, masked writes happen in update.
+                // We can save some ops if we really wanted to blend 0, but scalar broadcast is cheap.
 
-            // Transform back to world
-            auto gx_local = c1 * ec.axis_1_x + c2 * ec.axis_2_x + c3 * ec.axis_3_x;
-            auto gy_local = c1 * ec.axis_1_y + c2 * ec.axis_2_y + c3 * ec.axis_3_y;
-            auto gz_local = c1 * ec.axis_1_z + c2 * ec.axis_2_z + c3 * ec.axis_3_z;
-            
-            // Normalize
-            auto g_len = collision::sqrt(collision::dot_3(gx_local, gy_local, gz_local, gx_local, gy_local, gz_local));
-            // Beware divide by zero if inside cuboid (a1=a2=a3=0). 
-            // In that case dist = -r. Gradient is ambiguous/zero.
-            // Let's protect against zero length.
-            auto non_zero = g_len > 0.0001f;
-            auto inv_g_len = DataT(1.0f) / g_len;
-            
-            auto nx = gx_local * inv_g_len;
-            auto ny = gy_local * inv_g_len;
-            auto nz = gz_local * inv_g_len;
-            
-            // If strictly inside, fall back to something? 
-            // Or just keep 0,0,0. 
-            // For now, only update if non-zero gradient (outside).
-            // Actually if dist < min_dist we update. If gradient is zero we set zero.
-            
-            // Blend zero if length is small
-            nx = DataT(0.0f).blend(nx, non_zero);
-            ny = DataT(0.0f).blend(ny, non_zero);
-            nz = DataT(0.0f).blend(nz, non_zero);
+                auto c1 = a1 * s1;
+                auto c2 = a2 * s2;
+                auto c3 = a3 * s3;
 
-            update(dist, nx, ny, nz);
+                // Transform back to world
+                auto gx_local = c1 * ec.axis_1_x + c2 * ec.axis_2_x + c3 * ec.axis_3_x;
+                auto gy_local = c1 * ec.axis_1_y + c2 * ec.axis_2_y + c3 * ec.axis_3_y;
+                auto gz_local = c1 * ec.axis_1_z + c2 * ec.axis_2_z + c3 * ec.axis_3_z;
+                
+                // Normalize
+                auto g_len = collision::sqrt(collision::dot_3(gx_local, gy_local, gz_local, gx_local, gy_local, gz_local));
+                
+                // Beware divide by zero.
+                auto non_zero = g_len > 0.0001f;
+                auto inv_g_len = DataT(1.0f) / g_len;
+                
+                auto nx = gx_local * inv_g_len;
+                auto ny = gy_local * inv_g_len;
+                auto nz = gz_local * inv_g_len;
+                
+                // Blend zero if length is small
+                nx = DataT(0.0f).blend(nx, non_zero);
+                ny = DataT(0.0f).blend(ny, non_zero);
+                nz = DataT(0.0f).blend(nz, non_zero);
+
+                update(dist, nx, ny, nz);
+            }
         }
         
          for (const auto &ec : e.z_aligned_cuboids)
@@ -374,6 +432,18 @@ namespace vamp
             auto xs = s.x - ec.x;
             auto ys = s.y - ec.y;
             auto zs = s.z - ec.z; // axis 3 is Z
+
+            // Bounding Sphere Pruning
+            auto diag_sq = ec.axis_1_r * ec.axis_1_r + ec.axis_2_r * ec.axis_2_r + ec.axis_3_r * ec.axis_3_r;
+            auto R = collision::sqrt(diag_sq);
+            auto center_dist_sq = collision::dot_3(xs, ys, zs, xs, ys, zs);
+            auto thresh = min_dist + s.r + R;
+            
+            auto skip_mask = (center_dist_sq >= thresh * thresh) & (thresh > 0.0f);
+            if (skip_mask.all())
+            {
+                continue;
+            }
 
             // Project
             auto p1 = collision::dot_2(ec.axis_1_x, ec.axis_1_y, xs, ys);
@@ -387,28 +457,32 @@ namespace vamp
             auto sum = collision::dot_3(a1, a2, a3, a1, a2, a3).sqrt();
             auto dist = sum - s.r;
             
-            auto s1 = DataT(-1.0f).blend(DataT(1.0f), p1 >= 0.0f);
-            auto s2 = DataT(-1.0f).blend(DataT(1.0f), p2 >= 0.0f);
-            auto s3 = DataT(-1.0f).blend(DataT(1.0f), p3 >= 0.0f);
+            auto mask = dist < min_dist;
+            if (mask.any())
+            {
+                auto s1 = DataT(-1.0f).blend(DataT(1.0f), p1 >= 0.0f);
+                auto s2 = DataT(-1.0f).blend(DataT(1.0f), p2 >= 0.0f);
+                auto s3 = DataT(-1.0f).blend(DataT(1.0f), p3 >= 0.0f);
 
-            auto c1 = a1 * s1;
-            auto c2 = a2 * s2;
-            auto c3 = a3 * s3;
-            
-            // box axes: axis1, axis2, (0,0,1)
-            auto gx_local = c1 * ec.axis_1_x + c2 * ec.axis_2_x;
-            auto gy_local = c1 * ec.axis_1_y + c2 * ec.axis_2_y;
-            auto gz_local = c3;
+                auto c1 = a1 * s1;
+                auto c2 = a2 * s2;
+                auto c3 = a3 * s3;
+                
+                // box axes: axis1, axis2, (0,0,1)
+                auto gx_local = c1 * ec.axis_1_x + c2 * ec.axis_2_x;
+                auto gy_local = c1 * ec.axis_1_y + c2 * ec.axis_2_y;
+                auto gz_local = c3;
 
-             auto g_len = collision::sqrt(collision::dot_3(gx_local, gy_local, gz_local, gx_local, gy_local, gz_local));
-             auto non_zero = g_len > 0.0001f;
-             auto inv_g_len = DataT(1.0f) / g_len;
+                 auto g_len = collision::sqrt(collision::dot_3(gx_local, gy_local, gz_local, gx_local, gy_local, gz_local));
+                 auto non_zero = g_len > 0.0001f;
+                 auto inv_g_len = DataT(1.0f) / g_len;
 
-             auto nx = DataT(0.0f).blend(gx_local * inv_g_len, non_zero);
-             auto ny = DataT(0.0f).blend(gy_local * inv_g_len, non_zero);
-             auto nz = DataT(0.0f).blend(gz_local * inv_g_len, non_zero);
-             
-             update(dist, nx, ny, nz);
+                 auto nx = DataT(0.0f).blend(gx_local * inv_g_len, non_zero);
+                 auto ny = DataT(0.0f).blend(gy_local * inv_g_len, non_zero);
+                 auto nz = DataT(0.0f).blend(gz_local * inv_g_len, non_zero);
+                 
+                 update(dist, nx, ny, nz);
+            }
         }
 
         // Heightfields - gradient approx up (0,0,1) for now? 
@@ -419,7 +493,11 @@ namespace vamp
         for (const auto &eh : e.heightfields)
         {
             auto dist = collision::sphere_heightfield_l2(eh, sx, sy, sz, sr);
-            update(dist, DataT(0.0f), DataT(0.0f), DataT(1.0f)); // dummy gradient up
+            auto mask = dist < min_dist;
+            if (mask.any())
+            {
+                update(dist, DataT(0.0f), DataT(0.0f), DataT(1.0f)); // dummy gradient up
+            }
         }
 
         return {min_dist, {gx, gy, gz}};
