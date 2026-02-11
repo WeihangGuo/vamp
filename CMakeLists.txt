@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.16...3.22)
 
 option(VAMP_LTO "Use LTO." ON)
 option(VAMP_FORCE_COLORED_OUTPUT "Always produce ANSI-colored output." ON)
-option(VAMP_FORCE_CLANG "Force the use of Clang." OFF)
+option(VAMP_FORCE_CLANG "Force the use of Clang." ON)
 
-option(VAMP_BUILD_PYTHON_BINDINGS "Build VAMP Python bindings" ON)
+option(VAMP_BUILD_PYTHON_BINDINGS "Build VAMP Python bindings" OFF)
 option(VAMP_INSTALL_CPP_LIBRARY "Install VAMP C++ library (disable for Python wheel builds)" ON)
 
 option(VAMP_BUILD_CPP_DEMO "Build VAMP C++ Demo Scripts" ON)
@@ -141,14 +141,17 @@ endif()
 if(VAMP_BUILD_CPP_DEMO)
   add_executable(vamp_rrtc_example scripts/cpp/rrtc_example.cc)
   target_link_libraries(vamp_rrtc_example PRIVATE vamp_cpp)
-  
+
   add_executable(vamp_sdf_example scripts/cpp/sdf_example.cc)
   target_link_libraries(vamp_sdf_example PRIVATE vamp_cpp)
 
+  add_executable(vamp_test scripts/cpp/test.cc)
+  target_link_libraries(vamp_test PRIVATE vamp_cpp)
 
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(vamp_rrtc_example PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
     target_compile_options(vamp_sdf_example PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
+    target_compile_options(vamp_test PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)
   endif()
 endif()
 
@@ -159,7 +162,7 @@ if(VAMP_BUILD_OMPL_DEMO)
   if(ompl_FOUND)
     add_executable(vamp_ompl_integration scripts/cpp/ompl_integration.cc)
     target_link_libraries(vamp_ompl_integration PRIVATE ompl::ompl vamp_cpp)
-    
+
     # Disable strict warnings for demos to maintain compatibility
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       target_compile_options(vamp_ompl_integration PRIVATE -Wno-c++11-narrowing -Wno-sign-compare)

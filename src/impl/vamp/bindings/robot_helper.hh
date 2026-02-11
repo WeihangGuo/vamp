@@ -344,28 +344,6 @@ namespace vamp::binding
             return filtered;
         }
 
-        inline static auto sdf(const Type &c_in, const EnvironmentInput &environment) -> float
-        {
-            auto q_new_arr = Input::array(c_in);
-            std::vector<float> q_vec(q_new_arr.begin(), q_new_arr.end());
-            typename Robot::template ConfigurationBlock<rake> block(q_vec, true);
-            auto dists = Robot::sdf(EnvironmentVector(environment), block);
-
-            float min_dist = 1e9;
-            for (const auto &v : dists)
-            {
-                auto arr = v.to_array();
-                for (auto d : arr)
-                {
-                    if (d < min_dist)
-                    {
-                        min_dist = d;
-                    }
-                }
-            }
-            return min_dist;
-        }
-
         inline static auto
         project_to_valid(const Type &c_in, const EnvironmentInput &environment, float alpha = 0.1f) -> Type
         {
@@ -388,7 +366,7 @@ namespace vamp::binding
             // Initial check
             std::vector<float> q_vec(q_new_arr.begin(), q_new_arr.end());
             typename Robot::template ConfigurationBlock<rake> block(q_vec, true);
-            
+
             // Boolean check: valid if both self-collision free AND environment collision free
             if (Robot::template fkcc<rake>(env_v, block))
             {
@@ -398,10 +376,10 @@ namespace vamp::binding
             bool valid = Robot::template fkcc<rake>(env_v, block);
 
             // If min_dist >= 0, it means we are environment-safe, but fkcc returned false,
-            // so we must be in self-collision. 
+            // so we must be in self-collision.
             // Since we don't have self-collision gradient, we can only return what we have (and maybe clamped).
             // But let's run the loop anyway to enforce bounds if nothing else.
-            
+
             int iter = 0;
             const int max_iters = 100;
             while (iter < max_iters)
@@ -417,14 +395,16 @@ namespace vamp::binding
                 auto res = Robot::sdf_gradient(env_v, b);
 
                 // Gradient
-                std::array<float, Robot::n_spheres * 3> flat_grads;
-                for (size_t k = 0; k < Robot::n_spheres * 3; ++k)
-                {
-                    flat_grads[k] = res.second[k].to_array()[0];
-                }
+                // Original: flatten grads, then call d_collision_d_q
+                // New: pass blocks directly
+                typename Robot::template ConfigurationBlock<rake> dq_block;
+                Robot::template d_collision_d_q<rake>(b, res.second, dq_block);
 
                 std::array<float, Robot::dimension> dq;
-                Robot::d_collision_d_q(q_new_arr, flat_grads, dq);
+                for (size_t k = 0; k < Robot::dimension; ++k)
+                {
+                    dq[k] = dq_block[k].element(0);
+                }
 
                 float dq_norm = 0.0f;
                 for (float v : dq)
@@ -438,7 +418,7 @@ namespace vamp::binding
                     for (size_t k = 0; k < Robot::dimension; ++k)
                     {
                         q_new_arr[k] += alpha * (dq[k] / dq_norm);
-                        
+
                         // Clamp to bounds
                         if (q_new_arr[k] < lower_bound[k]) q_new_arr[k] = lower_bound[k];
                         if (q_new_arr[k] > upper_bound[k]) q_new_arr[k] = upper_bound[k];
@@ -730,12 +710,6 @@ namespace vamp::binding
            "environment"_a,
            "settings"_a,
            "rng"_a);
-
-        MF("sdf",
-           sdf,
-           "Computes the signed distance field.",
-           "configuration"_a,
-           "environment"_a = vamp::collision::Environment<float>());
 
         MF("project_to_valid",
            project_to_valid,
